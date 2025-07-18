@@ -1,0 +1,5 @@
+.venv
+venv
+__pycache__
+0_999
+accent-whisper-ja-lora

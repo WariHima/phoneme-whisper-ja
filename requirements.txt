@@ -1,0 +1,15 @@
+#for wer
+jiwer
+evaluate
+#for dataset
+soundfile
+librosa
+pydub
+datasets==3.6.0 #3.3.2
+numpy
+#for tarin
+transformers
+peft
+bitsandbytes
+
+tensorboardX
