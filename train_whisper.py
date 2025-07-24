@@ -18,6 +18,7 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import evaluate
+import jaconv
 
 from mora_list import __MORA_LIST_MINIMUM, __MORA_LIST_ADDITIONAL
 
@@ -60,7 +61,7 @@ def _numeric_feature_by_regex(pattern: re.Pattern[str], s: str) -> int:
     return int(match.group(1))
 
 
-def pyopenjtalk_g2p_prosody(text: str, drop_unvoiced_vowels: bool = True) -> list[str]:
+def pyopenjtalk_g2p_prosody(text: str, drop_unvoiced_vowels: bool = True) -> str:
     """
     入力された完全文脈ラベルから音素とプロソディ記号のシーケンスを抽出します。
 
@@ -146,6 +147,8 @@ def pyopenjtalk_g2p_prosody(text: str, drop_unvoiced_vowels: bool = True) -> lis
 
     phone_text_list = phone_text.split(" ")
     phone_text = "".join(phone_text_list)
+    phone_text = jaconv.kata2hira(phone_text)
+
 
     print(phone_text)
     return phone_text
@@ -222,6 +225,9 @@ def compute_metrics(pred, processor: WhisperProcessor, metric_wer: Any):
     pred_str = processor.tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
+    pred_str = [" ".join([ str(i) for i in j ]) for j in pred_str]
+    label_str = [" ".join([ str(i) for i in j ]) for j in label_str]
+
     # WERを計算
     wer = 100 * metric_wer.compute(predictions=pred_str, references=label_str)
     return {"wer": wer}
@@ -234,14 +240,14 @@ def main():
     WAV_DIR = Path("./0_999/wav")
     LAB_DIR = Path("./0_999/lab")
     OUTPUT_DIR = "accent-whisper-ja-lora"
-    MODEL_NAME = "efwkjn/whisper-ja-anime-v0.3"
+    MODEL_NAME = "efwkjn/whisper-ja-anime-v0.3"#"openai/whisper-large-v3-turbo"
 
     # トレーニング引数
     TRAIN_BATCH_SIZE = 8
     GRADIENT_ACCUMULATION_STEPS = 1
-    LEARNING_RATE = 1e-5
+    LEARNING_RATE = 1e-7 # 2e-5
     WARMUP_STEPS = 5
-    MAX_STEPS = 1000
+    MAX_STEPS = 100
     SAVE_EVAL_STEPS = 10
     LOGGING_STEPS = 25
     EVAL_BATCH_SIZE = 8
@@ -264,7 +270,7 @@ def main():
         # LABファイルの内容を読み込み、pyopenjtalk_g2p_prosodyで処理
         lab_content = labfile.read_text(encoding="utf-8")
         text = pyopenjtalk_g2p_prosody(lab_content)
-        text = " ".join(text)
+        #text = " ".join(text)
 
         # soundfileで音声データをNumPy配列としてロードし、pydubでフレームレートを取得
         data, samplerate = sf.read(str(wavfile))
@@ -310,24 +316,44 @@ def main():
         common_voice = common_voice.train_test_split(test_size=0.2)
 
 
-    data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
+
+    
+        
+
 
     # --- モデルの初期化 ---
     print("モデルを初期化しています...")
+    #model = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME)
+    
+    
+
+    # -----lora setting start-----------------------------------------------------------------------
     model = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME,  load_in_4bit=LOAD_IN_8BIT)
+    
+    # encoderを凍結
+    model.model.encoder.requires_grad_(False)
+
+    model = prepare_model_for_kbit_training(model) 
+
+    config = LoraConfig(r=32, lora_alpha=64,
+                        target_modules=["q_proj", "v_proj"], lora_dropout=0.05, bias="none")
+    
+
+    model = get_peft_model(model, config)
+
     model.config.forced_decoder_ids = processor.get_decoder_prompt_ids(
         language="ja", task="transcribe"
     )
+    # -----lora setting end-----------------------------------------------------------------------
+    
+    
     
     model.config.suppress_tokens = []
 
     model.config.use_cache = False
 
-    model = prepare_model_for_kbit_training(model) 
-    config = LoraConfig(r=32, lora_alpha=64,
-                        target_modules=["q_proj", "v_proj"], lora_dropout=0.05, bias="none")
-    
-    model = get_peft_model(model, config)
+    data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor)
+
 
     model.print_trainable_parameters()
 
@@ -343,12 +369,13 @@ def main():
         gradient_checkpointing=True,
         fp16=True,
         group_by_length=True,
-        eval_strategy="steps",
+        eval_strategy="epoch",
+        save_strategy="epoch",
         per_device_eval_batch_size=EVAL_BATCH_SIZE,
         predict_with_generate=True,
         generation_max_length=GENERATION_MAX_LENGTH,
-        save_steps=SAVE_EVAL_STEPS,
-        eval_steps=SAVE_EVAL_STEPS,
+        #save_steps=SAVE_EVAL_STEPS,
+        #eval_steps=SAVE_EVAL_STEPS,
         logging_steps=LOGGING_STEPS,
         report_to=["tensorboard"],
         load_best_model_at_end=True,

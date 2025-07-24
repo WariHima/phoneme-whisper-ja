@@ -74,19 +74,19 @@ if __name__ == "__main__":
     # 1. オリジナルのWhisperモデルの指定
     # 小さなモデルから試すことをお勧めします
     # 例えば "openai/whisper-tiny", "openai/whisper-small" など
-    BASE_MODEL = "openai/whisper-small" 
+    BASE_MODEL = "openai/whisper-large-v3-turbo" 
     
     # 2. LoRAアダプターを保存したディレクトリのパス
     # これはあなたがLoRAでファインチューニングしたモデルを保存したディレクトリです。
     # 例: trainer.save_model("my_whisper_lora_model") で保存した場合のディレクトリ名
-    LORA_ADAPTER_DIR = "./my_whisper_lora_model_small" # 仮のパス、ご自身のパスに変更してください
+    LORA_ADAPTER_DIR = "./accent-whisper-ja-lora/checkpoint-190" # 仮のパス、ご自身のパスに変更してください
     
     # 3. 推論したい音声ファイルのパス
     # 実際の音声ファイルを用意してください。
     # 例えば、サンプルとしてHugging Face Datasetsから取得するか、
     # 自分で録音した短い音声ファイルなど
-    AUDIO_FILE = "./sample_audio.flac" # 仮のパス、ご自身の音声ファイルパスに変更してください
-    
+    AUDIO_FILE = "./dataset_example/wav/vsm_jvnv_f2_0.wav" 
+
     # 注意: `AUDIO_FILE`が存在しない場合、ダミーデータで実行されますが、
     # 実際の推論結果は得られません。`librosa`などで音声ファイルを読み込む部分を
     # 実際のコードに置き換える必要があります。
@@ -96,6 +96,7 @@ if __name__ == "__main__":
         # 実際の推論には不要ですが、librosaなしで動作確認するため
         import soundfile as sf
         import numpy as np
+        import os
         if not os.path.exists(AUDIO_FILE):
             print(f"警告: 音声ファイル '{AUDIO_FILE}' が見つかりません。ダミーデータを使用します。")
             # 16kHzで5秒間のサイン波を生成
@@ -107,7 +108,7 @@ if __name__ == "__main__":
             sf.write(AUDIO_FILE, data, samplerate)
             print(f"ダミー音声ファイル '{AUDIO_FILE}' を作成しました。")
             
-        import os
+        
         if not os.path.exists(LORA_ADAPTER_DIR):
             print(f"警告: LoRAアダプターディレクトリ '{LORA_ADAPTER_DIR}' が見つかりません。")
             print("LoRAアダプターがトレーニングされ、このパスに保存されていることを確認してください。")
